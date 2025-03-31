@@ -70,7 +70,7 @@ jobs:
         run: yarn install --check-files --frozen-lockfile
         
       - name: Build
-        run: yarn release:win
+        run: yarn run release:win
         
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
