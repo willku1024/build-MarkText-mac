@@ -77,7 +77,7 @@ jobs:
         with:
           name: exe-file
           path: |
-            build/**/*.exe
+            build/**/marktext-setup.exe
             
   parse-artifacts:
     runs-on: ubuntu-latest
@@ -109,4 +109,4 @@ jobs:
           tag_name: ${{env.GIT_COMMIT_DATE_TIME_FILE_NAME}}_${{env.TIME_STAMP}}
           body_path: CHANGELOG.txt
           files: |
-            **/marktext-setup.exe
+            **/*.exe
