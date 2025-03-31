@@ -109,4 +109,4 @@ jobs:
           tag_name: ${{env.GIT_COMMIT_DATE_TIME_FILE_NAME}}_${{env.TIME_STAMP}}
           body_path: CHANGELOG.txt
           files: |
-            **/*.exe
+            **/marktext-setup.exe
