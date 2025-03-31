@@ -45,7 +45,7 @@ jobs:
           git log --pretty=format:"%cd|||%cn|||%s" -1 --date=unix > ${{env.GCI}}
 
       - name: 上传git提交信息
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{env.GCI}}
           path: ${{env.GCI}}
