@@ -1,12 +1,9 @@
-# GitHub Actions workflow – daily macOS build for MarkText
+# GitHub Actions workflow – **manual** macOS build for MarkText
 
 name: build-mac
 
 on:
-  # Run every day at 00:00 UTC (≈ 10:00 AEST)
-  schedule:
-    - cron: "0 40 * * *"
-  # Allow manual runs from the Actions tab
+  # Only run when manually triggered via the Actions tab
   workflow_dispatch:
 
 env:
@@ -70,7 +67,7 @@ jobs:
         run: |
           ls -lshR
           log=$(cat */${{ env.GCI }})
-          timestamp=$(echo $log | grep -o '^[0-9]\+')
+          timestamp=$(echo $log | grep -o '^[0-9]\\+')
           # Convert to China Standard Time (UTC+8)
           china=$(($timestamp + 28800))
           dateTime=$(date --date="@$china" +"%Y-%m-%d %H:%M:%S")
@@ -80,7 +77,7 @@ jobs:
           now=$(($now + 28800))
           echo "TIME_STAMP=$(date --date=\"@$now\" +%Y-%m-%d_%H.%M.%S)" >> $GITHUB_ENV
           echo "GIT_COMMIT_INFO=$log" >> $GITHUB_ENV
-          echo -e "$dateTime \n $log" > CHANGELOG.txt
+          echo -e "$dateTime \\n $log" > CHANGELOG.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -90,18 +87,3 @@ jobs:
           files: |
             **/*.dmg
             **/*.zip
-
-  keep-build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: 🚗 Keep Running
-        if: github.event_name == 'schedule'
-        run: |
-          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git config --local user.name "${{ github.actor }}"
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
-          git pull --rebase --autostash
-          git commit --allow-empty -m "Keep Running..."
-          git push
