@@ -56,6 +56,11 @@ jobs:
           echo "LDFLAGS=-L$(brew --prefix openssl@1.1)/lib" >> $GITHUB_ENV
           echo "CPPFLAGS=-I$(brew --prefix openssl@1.1)/include" >> $GITHUB_ENV
 
+      - name: Workaround openssl_fips gyp var
+        run: |
+          echo "GYP_DEFINES=openssl_fips=" >> $GITHUB_ENV
+          echo "openssl_fips=" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: yarn install --check-files --frozen-lockfile
 
