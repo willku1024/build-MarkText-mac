@@ -1,7 +1,11 @@
-# build-marktext
+# build-marktext-mac
 
-每天自动编译[MarkText](https://github.com/marktext/marktext)。
+Clone this repo and click git aciton; you can compile [MarkText](https://github.com/marktext/marktext) for mac.
 
-Automatically compile [MarkText](https://github.com/marktext/marktext) every day。
+# 1. eliminate Gatekeeper quarantine mark
+xattr -dr com.apple.quarantine MarkText.app
+
+# 2. open with CLI (opt)
+open MarkText.app
 
 
