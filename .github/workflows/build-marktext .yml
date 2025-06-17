@@ -1,132 +1,129 @@
-# GitHub Actions workflow – manual macOS ARM64 build for MarkText
-# Fix: use Node 18 (has `openssl_fips` gyp var) to avoid keytar build error.
-#
-# This workflow manually triggers a build for the latest commit on the
-# default branch of the marktext/marktext repository.
-# It builds for macOS ARM64 (Apple Silicon) and creates a GitHub Release
-# with the compiled DMG and ZIP files.
+# GitHub Actions workflow – **manual** macOS **ARM64** build for MarkText
+# Fix: use Node 18 (has `openssl_fips` gyp var) to avoid keytar build error.
 
-name: Build MarkText for macOS (arm64)
+name: build-mac-arm
 
 on:
-  workflow_dispatch:  # Allows manual triggering of the workflow
+  workflow_dispatch:
 
 env:
-  # Environment variable for the commit info file name
   GCI: git-commit-info.txt
 
 jobs:
   build-macos:
-    name: Build on macOS 14 (ARM64)
-    runs-on: macos-14 # Specifies the Apple Silicon runner, which is required for arm64 builds
+    runs-on: macos-14   # Apple‑Silicon runner
     timeout-minutes: 60
     env:
-      # Ensures the build process will exit immediately if any command fails
       MARKTEXT_EXIT_ON_ERROR: 1
-      # GITHUB_TOKEN is automatically available to the runner
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Check out MarkText repository
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
-          # Specifies the repository to check out
           repository: "marktext/marktext"
-          # Fetch all history for accurate git log
-          fetch-depth: 0
 
       - name: Record latest commit info
         run: |
-          # Records the commit date (unix timestamp), author, and message to a file
           git log --pretty=format:"%cd|||%cn|||%s" -1 --date=unix > ${{ env.GCI }}
 
-      - name: Upload commit info artifact
+      - name: Upload commit info
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.GCI }}
           path: ${{ env.GCI }}
 
-      - name: Install Node.js v18
-        uses: actions/setup-node@v4
+      - name: Install Node.js 18 LTS (compatible with openssl_fips)
+        uses: actions/setup-node@v3
         with:
-          # Using Node.js 18 which is compatible with dependencies requiring older OpenSSL versions
-          node-version: '18'
-          # Caching yarn dependencies to speed up future builds
-          cache: 'yarn'
+          node-version: 18
+          cache: yarn
           cache-dependency-path: yarn.lock
 
-      - name: Setup Python for node-gyp
+      - name: Setup Python 3.11 for node‑gyp
         uses: actions/setup-python@v5
         with:
-          # Using Python 3.11 which is commonly used for build tools
           python-version: "3.11"
 
-      - name: Install dependencies with Yarn
-        run: yarn install --frozen-lockfile
+      - name: Export Python path for node‑gyp
+        run: |
+          echo "PYTHON=$(which python)" >> $GITHUB_ENV
+          echo "npm_config_python=$(which python)" >> $GITHUB_ENV
+
+      - name: Install OpenSSL headers (fallback for native builds)
+        run: |
+          brew install openssl@1.1
+          echo "LDFLAGS=-L$(brew --prefix openssl@1.1)/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$(brew --prefix openssl@1.1)/include" >> $GITHUB_ENV
+
+      - name: Workaround openssl_fips gyp var
+        run: |
+          echo "GYP_DEFINES=openssl_fips=" >> $GITHUB_ENV
+          echo "openssl_fips=" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: yarn install --check-files --frozen-lockfile
 
       - name: Build macOS arm64 release (dmg + zip)
-        # This command runs the release script defined in MarkText's package.json
-        # The --arm64 flag specifies the target architecture
         run: yarn run release:mac --arm64
 
       - name: Archive release artifacts
         uses: actions/upload-artifact@v4
         with:
-          # Uploads the compiled DMG and ZIP files as artifacts
-          name: marktext-mac-arm64
+          name: dmg-arm64
           path: |
-            build/*.dmg
-            build/*.zip
+            build/**/*arm64*.dmg
+            build/**/*arm64*.zip
 
-  create-release:
-    name: Create GitHub Release
+  parse-artifacts:
     runs-on: ubuntu-latest
-    # This job will only run after the 'build-macos' job has successfully completed
     needs: build-macos
     permissions:
-      # Required permission to create a GitHub Release
       contents: write
     steps:
-      - name: Download all build artifacts
-        # Downloads artifacts from all previous jobs (build-macos in this case)
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
 
-      - name: Prepare release changelog and variables
-        id: prep
+      - name: Prepare changelog and env vars
         run: |
-          # Finds the downloaded commit info file and reads its content
-          log_file=$(find . -type f -name "${{ env.GCI }}")
-          log_content=$(cat "$log_file")
+          set -eo pipefail
+          echo "📦 Workspace tree:"
+          ls -lshR
 
-          # Extracts the unix timestamp from the log
-          timestamp=$(echo "$log_content" | cut -d'|' -f1)
-          
-          # Formats the date for the release tag and body. Using UTC for consistency.
-          release_tag="v$(date -u -d "@$timestamp" +"%Y.%m.%d-%H%M%S")"
-          release_date=$(date -u -d "@$timestamp" +"%Y-%m-%d %H:%M:%S UTC")
-          
-          # Extracts commit message for the release body
-          commit_message=$(echo "$log_content" | cut -d'|' -f3-)
-          
-          # Creates the release body content and saves it to a file
-          echo "Build based on commit: \`$commit_message\`" > release_body.md
-          echo "Commit Date: $release_date" >> release_body.md
+          # Locate the first git‑commit‑info.txt file inside downloaded artifacts
+          logfile=$(find . -type f -name "$GCI" | head -n1)
+          if [[ -z "$logfile" ]]; then
+            echo "❌ Cannot find $GCI in downloaded artifacts" >&2
+            exit 1
+          fi
+          echo "Using log file: $logfile"
+          log=$(cat "$logfile")
 
-          # Sets the release tag as an output for the next step
-          echo "tag_name=$release_tag" >> $GITHUB_OUTPUT
-          echo "Release tag: $release_tag"
-          echo "Release body:"
-          cat release_body.md
+          timestamp=$(echo "$log" | grep -oE '^[0-9]+')
+          if [[ -z "$timestamp" ]]; then
+            echo "❌ Failed to extract UNIX timestamp from log" >&2
+            exit 1
+          fi
 
+          china=$(($timestamp + 28800))
+          dateTime=$(date --date="@$china" +"%Y-%m-%d %H:%M:%S")
+          dateTimeFileName=$(date --date="@$china" +"%Y-%m-%d_%H.%M.%S")
 
-      - name: Create GitHub Release and Upload Assets
+          echo "GIT_COMMIT_DATE_TIME_FILE_NAME=$dateTimeFileName" >> $GITHUB_ENV
+
+          now=$(($(date +%s) + 28800))
+          echo "TIME_STAMP=$(date --date="@$now" +%Y-%m-%d_%H.%M.%S)" >> $GITHUB_ENV
+          echo "GIT_COMMIT_INFO=$log" >> $GITHUB_ENV
+
+          printf "%s
+%s" "$dateTime" "$log" > CHANGELOG.txt
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          # Uses the tag generated in the previous step
-          tag_name: ${{ steps.prep.outputs.tag_name }}
-          # Path to the file containing the release notes
-          body_path: release_body.md
-          # Finds the DMG and ZIP files in the downloaded artifacts directory
+          tag_name: ${{ env.GIT_COMMIT_DATE_TIME_FILE_NAME }}_${{ env.TIME_STAMP }}
+          body_path: CHANGELOG.txt
           files: |
-            marktext-mac-arm64/*.dmg
-            marktext-mac-arm64/*.zip
+            **/*arm64*.dmg
+            **/*arm64*.zip |
+            **/*arm64*.dmg
+            **/*arm64*.zip
