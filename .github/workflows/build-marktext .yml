@@ -1,6 +1,5 @@
 # GitHub Actions workflow – **manual** macOS **ARM64** build for MarkText
-
-# This version produces native Apple‑Silicon (arm64) DMG/ZIP artefacts.
+# Fix: use Node 18 (has `openssl_fips` gyp var) to avoid keytar build error.
 
 name: build-mac-arm
 
@@ -12,8 +11,7 @@ env:
 
 jobs:
   build-macos:
-    # Apple‑Silicon runner (macOS 14) → builds arm64 binaries directly
-    runs-on: macos-14
+    runs-on: macos-14   # Apple‑Silicon runner
     timeout-minutes: 60
     env:
       MARKTEXT_EXIT_ON_ERROR: 1
@@ -35,26 +33,24 @@ jobs:
           name: ${{ env.GCI }}
           path: ${{ env.GCI }}
 
-      - name: Install Node.js (v20 LTS)
+      - name: Install Node.js 18 LTS (compatible with openssl_fips)
         uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: 18
           cache: yarn
           cache-dependency-path: yarn.lock
 
-      # Provide Python 3.11 (bundles distutils) for node‑gyp
-      - name: Setup Python 3.11 for node-gyp
+      - name: Setup Python 3.11 for node‑gyp
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Export Python path for node-gyp
+      - name: Export Python path for node‑gyp
         run: |
           echo "PYTHON=$(which python)" >> $GITHUB_ENV
           echo "npm_config_python=$(which python)" >> $GITHUB_ENV
 
-      # Ensure OpenSSL headers are available if native rebuild is needed
-      - name: Install OpenSSL dev headers
+      - name: Install OpenSSL headers (fallback for native builds)
         run: |
           brew install openssl@1.1
           echo "LDFLAGS=-L$(brew --prefix openssl@1.1)/lib" >> $GITHUB_ENV
@@ -64,8 +60,7 @@ jobs:
         run: yarn install --check-files --frozen-lockfile
 
       - name: Build macOS arm64 release (dmg + zip)
-        # Pass --arm64 so electron‑builder skips universal/x64 targets
-        run: yarn run release:mac -- --arm64
+        run: yarn run release:mac --arm64
 
       - name: Archive release artifacts
         uses: actions/upload-artifact@v4
@@ -88,7 +83,6 @@ jobs:
           ls -lshR
           log=$(cat */${{ env.GCI }})
           timestamp=$(echo $log | grep -o '^[0-9]\\+')
-          # Convert to China Standard Time (UTC+8)
           china=$(($timestamp + 28800))
           dateTime=$(date --date="@$china" +"%Y-%m-%d %H:%M:%S")
           dateTimeFileName=$(date --date="@$china" +"%Y-%m-%d_%H.%M.%S")
