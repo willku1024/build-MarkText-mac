@@ -114,8 +114,7 @@ jobs:
           echo "TIME_STAMP=$(date --date="@$now" +%Y-%m-%d_%H.%M.%S)" >> $GITHUB_ENV
           echo "GIT_COMMIT_INFO=$log" >> $GITHUB_ENV
 
-          printf "%s
-%s" "$dateTime" "$log" > CHANGELOG.txt
+          printf "%s%s" "$dateTime" "$log" > CHANGELOG.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
