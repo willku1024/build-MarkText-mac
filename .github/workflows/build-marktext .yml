@@ -1,127 +1,107 @@
-# This is a basic workflow to help you get started with Actions
+# GitHub Actions workflow – **manual** macOS build for MarkText (Intel runner & OpenSSL fix)
 
-name: build
+name: build-mac
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the main branch
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
-  schedule:
-    # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#scheduled-events
-    - cron: "0 0 * * *"
 
-  
 env:
-  GCI:  git-commit-info.txt
+  GCI: git-commit-info.txt
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-
-  # https://github.com/marktext/marktext/actions/runs/1539033367/workflow
-  build-windows:
-    runs-on: windows-latest
-    continue-on-error: false
+  build-macos:
+    # Use Intel‑based mac runner → prebuilt native modules match x64 and avoid rebuild errors
+    runs-on: macos-12
     timeout-minutes: 60
-
     env:
-      # MARKTEXT_IS_STABLE: 1
       MARKTEXT_EXIT_ON_ERROR: 1
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Check out Git repository
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
-         repository: 'marktext/marktext' 
-      
-      - name: Get latest commit
-        shell: pwsh
-        run: |
-          git log --pretty=format:"%cd|||%cn|||%s" -1 --date=unix > ${{env.GCI}}
+          repository: "marktext/marktext"
 
-      - name: 上传git提交信息
+      - name: Record latest commit info
+        run: |
+          git log --pretty=format:"%cd|||%cn|||%s" -1 --date=unix > ${{ env.GCI }}
+
+      - name: Upload commit info
         uses: actions/upload-artifact@v4
         with:
-          name: ${{env.GCI}}
-          path: ${{env.GCI}}
+          name: ${{ env.GCI }}
+          path: ${{ env.GCI }}
 
-      - name: Install Node.js
+      - name: Install Node.js (v18 LTS for better native‑addon compatibility)
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
           check-latest: true
           cache: yarn
           cache-dependency-path: yarn.lock
 
-      # Workaround: Fix native build failure due to outdated node-gyp version.
-      - name: Fix node-gyp
+      # Fix: Provide Python 3.11 (with distutils) for node-gyp
+      - name: Setup Python 3.11 for node-gyp
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Export Python path for node-gyp
         run: |
-          npm install --global node-gyp@latest
-          npm prefix -g | % {npm config set node_gyp "$_\node_modules\node-gyp\bin\node-gyp.js"}
-          node-gyp install
-        shell: pwsh
+          echo "PYTHON=$(which python)" >> $GITHUB_ENV
+          echo "npm_config_python=$(which python)" >> $GITHUB_ENV
+
+      # Fix: Ensure OpenSSL headers are present so keytar etc. build if still required
+      - name: Install OpenSSL dev headers
+        run: |
+          brew install openssl@1.1
+          echo "LDFLAGS=-L$(brew --prefix openssl@1.1)/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$(brew --prefix openssl@1.1)/include" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: yarn install --check-files --frozen-lockfile
-        
-      - name: Build
-        run: yarn run release:win
-        
-      - name: Archive production artifacts
+
+      - name: Build macOS release (dmg + zip)
+        run: yarn run release:mac
+
+      - name: Archive release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: exe-file
+          name: dmg-file
           path: |
-            build/**/marktext-setup.exe
-            
+            build/**/*MarkText*.dmg
+            build/**/*MarkText*.zip
+
   parse-artifacts:
     runs-on: ubuntu-latest
-    needs: build-windows
+    needs: build-macos
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-      - run: |
-           ls -lshR
-           log=$(cat */${{env.GCI}})
-           timestamp=$(echo $log | grep -o '^[0-9]\+')
-           # 转换到中国时间
-           china=$(($timestamp + 28800))
-           dateTime=$(date --date="@$china" +"%Y-%m-%d %H:%M:%S")
-           dateTimeFileName=$(date --date="@$china" +"%Y-%m-%d_%H.%M.%S")
-           echo "GIT_COMMIT_DATE_TIME_FILE_NAME=$dateTimeFileName" >> $GITHUB_ENV
-           now=$(date +%s)
-           now=$(($now + 28800))
-           echo "TIME_STAMP=$(date --date="@$now" +%Y-%m-%d_%H.%M.%S)" >> $GITHUB_ENV
-           echo "GIT_COMMIT_INFO=$log" >> $GITHUB_ENV
-           echo -e "$dateTime \n $log" > CHANGELOG.txt
-           #sudo apt update
-           #sudo apt install -y upx
-           #find -name *.exe -exec upx -9 "{}" \;
-      - name: Release
+
+      - name: Prepare changelog and env vars
+        run: |
+          ls -lshR
+          log=$(cat */${{ env.GCI }})
+          timestamp=$(echo $log | grep -o '^[0-9]\\+')
+          # Convert to China Standard Time (UTC+8)
+          china=$(($timestamp + 28800))
+          dateTime=$(date --date="@$china" +"%Y-%m-%d %H:%M:%S")
+          dateTimeFileName=$(date --date="@$china" +"%Y-%m-%d_%H.%M.%S")
+          echo "GIT_COMMIT_DATE_TIME_FILE_NAME=$dateTimeFileName" >> $GITHUB_ENV
+          now=$(date +%s)
+          now=$(($now + 28800))
+          echo "TIME_STAMP=$(date --date=\"@$now\" +%Y-%m-%d_%H.%M.%S)" >> $GITHUB_ENV
+          echo "GIT_COMMIT_INFO=$log" >> $GITHUB_ENV
+          echo -e "$dateTime \n $log" > CHANGELOG.txt
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{env.GIT_COMMIT_DATE_TIME_FILE_NAME}}_${{env.TIME_STAMP}}
+          tag_name: ${{ env.GIT_COMMIT_DATE_TIME_FILE_NAME }}_${{ env.TIME_STAMP }}
           body_path: CHANGELOG.txt
           files: |
-            **/*.exe
-
-  keep-build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: 🚗 Keep Running
-        if: github.event_name == 'schedule'
-        run: |
-          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git config --local user.name "${{ github.actor }}"
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
-          git pull --rebase --autostash
-          git commit --allow-empty -m "Keep Running..."
-          git push
+            **/*.dmg
+            **/*.zip
