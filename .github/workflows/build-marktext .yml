@@ -114,7 +114,8 @@ jobs:
           echo "TIME_STAMP=$(date --date="@$now" +%Y-%m-%d_%H.%M.%S)" >> $GITHUB_ENV
           echo "GIT_COMMIT_INFO=$log" >> $GITHUB_ENV
 
-          printf "%s%s" "$dateTime" "$log" > CHANGELOG.txt
+          printf "%s
+%s" "$dateTime" "$log" > CHANGELOG.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -122,7 +123,5 @@ jobs:
           tag_name: ${{ env.GIT_COMMIT_DATE_TIME_FILE_NAME }}_${{ env.TIME_STAMP }}
           body_path: CHANGELOG.txt
           files: |
-            **/*arm64*.dmg
-            **/*arm64*.zip |
             **/*arm64*.dmg
             **/*arm64*.zip
