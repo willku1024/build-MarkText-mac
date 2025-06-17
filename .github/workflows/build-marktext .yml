@@ -1,6 +1,8 @@
-# GitHub Actions workflow – **manual** macOS build for MarkText (Intel runner & OpenSSL fix)
+# GitHub Actions workflow – **manual** macOS **ARM64** build for MarkText
 
-name: build-mac
+# This version produces native Apple‑Silicon (arm64) DMG/ZIP artefacts.
+
+name: build-mac-arm
 
 on:
   workflow_dispatch:
@@ -10,8 +12,8 @@ env:
 
 jobs:
   build-macos:
-    # Use Intel‑based mac runner → prebuilt native modules match x64 and avoid rebuild errors
-    runs-on: macos-12
+    # Apple‑Silicon runner (macOS 14) → builds arm64 binaries directly
+    runs-on: macos-14
     timeout-minutes: 60
     env:
       MARKTEXT_EXIT_ON_ERROR: 1
@@ -33,15 +35,14 @@ jobs:
           name: ${{ env.GCI }}
           path: ${{ env.GCI }}
 
-      - name: Install Node.js (v18 LTS for better native‑addon compatibility)
+      - name: Install Node.js (v20 LTS)
         uses: actions/setup-node@v3
         with:
-          node-version: 18
-          check-latest: true
+          node-version: 20
           cache: yarn
           cache-dependency-path: yarn.lock
 
-      # Fix: Provide Python 3.11 (with distutils) for node-gyp
+      # Provide Python 3.11 (bundles distutils) for node‑gyp
       - name: Setup Python 3.11 for node-gyp
         uses: actions/setup-python@v5
         with:
@@ -52,7 +53,7 @@ jobs:
           echo "PYTHON=$(which python)" >> $GITHUB_ENV
           echo "npm_config_python=$(which python)" >> $GITHUB_ENV
 
-      # Fix: Ensure OpenSSL headers are present so keytar etc. build if still required
+      # Ensure OpenSSL headers are available if native rebuild is needed
       - name: Install OpenSSL dev headers
         run: |
           brew install openssl@1.1
@@ -62,16 +63,17 @@ jobs:
       - name: Install dependencies
         run: yarn install --check-files --frozen-lockfile
 
-      - name: Build macOS release (dmg + zip)
-        run: yarn run release:mac
+      - name: Build macOS arm64 release (dmg + zip)
+        # Pass --arm64 so electron‑builder skips universal/x64 targets
+        run: yarn run release:mac -- --arm64
 
       - name: Archive release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dmg-file
+          name: dmg-arm64
           path: |
-            build/**/*MarkText*.dmg
-            build/**/*MarkText*.zip
+            build/**/*arm64*.dmg
+            build/**/*arm64*.zip
 
   parse-artifacts:
     runs-on: ubuntu-latest
@@ -103,5 +105,5 @@ jobs:
           tag_name: ${{ env.GIT_COMMIT_DATE_TIME_FILE_NAME }}_${{ env.TIME_STAMP }}
           body_path: CHANGELOG.txt
           files: |
-            **/*.dmg
-            **/*.zip
+            **/*arm64*.dmg
+            **/*arm64*.zip
